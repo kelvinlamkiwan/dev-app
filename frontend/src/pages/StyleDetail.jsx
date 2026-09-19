@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import BomEditor from '../components/BomEditor.jsx'
+import CostingEditor from '../components/CostingEditor.jsx'
 
 const STAGES = ['development', 'confirmation', 'salesman', 'production', 'photo']
 
@@ -77,6 +78,7 @@ export default function StyleDetail() {
             Sample: {sample.sample_no || '—'} · Size: {sample.size || '—'} · 狀態: {sample.status || '—'}
           </div>
           <BomEditor key={sample.id} bom={sample.bom} onChanged={load} />
+          <CostingEditor key={`cost-${sample.id}`} sample={sample} />
         </>
       ) : (
         <div className="empty">未有樣本階段，撳「＋ 加階段」</div>

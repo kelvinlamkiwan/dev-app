@@ -135,6 +135,52 @@ def delete_material(mid: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@app.post("/materials/sync", response_model=schemas.MaterialSyncResult)
+def sync_materials(payload: schemas.MaterialSyncRequest, db: Session = Depends(get_db)):
+    """Bulk upsert material master：有 material_code 就更新、冇就新增。
+
+    - `delete_missing=True` 時做 full sync：push 入面冇嘅 material_code 會被刪走。
+    - 每條 record 用 payload 全量覆寫（包括 None 欄位），確保 DB 同 source 一致。
+    """
+    created = updated = deleted = 0
+    items: list = []
+    errors: list = []
+    seen_codes: list = []
+
+    for m in payload.materials:
+        if not m.material_code:
+            errors.append(f"缺 material_code：{m.name or '(unnamed)'}")
+            continue
+        existing = db.query(models.Material).filter_by(material_code=m.material_code).first()
+        data = m.model_dump()
+        if existing:
+            for k, v in data.items():
+                setattr(existing, k, v)
+            action, item_id = "updated", existing.id
+            updated += 1
+        else:
+            obj = models.Material(**data)
+            db.add(obj)
+            db.flush()
+            action, item_id = "created", obj.id
+            created += 1
+        seen_codes.append(m.material_code)
+        items.append({"material_code": m.material_code, "id": item_id, "action": action})
+
+    if payload.delete_missing and seen_codes:
+        to_delete = db.query(models.Material).filter(
+            ~models.Material.material_code.in_(seen_codes)
+        ).all()
+        for d in to_delete:
+            db.delete(d)
+        deleted = len(to_delete)
+
+    db.commit()
+    return schemas.MaterialSyncResult(
+        created=created, updated=updated, deleted=deleted, errors=errors, items=items
+    )
+
+
 # ---------- Styles ----------
 @app.get("/styles", response_model=list[schemas.StyleSummary])
 def list_styles(db: Session = Depends(get_db)):
@@ -272,6 +318,89 @@ def confirm_bom(bid: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(bom)
     return schemas.BomOut.model_validate(bom)
+
+
+# ---------- Costing ----------
+def _costing_out(costing, db: Session) -> schemas.CostingOut:
+    bom = db.query(models.Bom).filter_by(sample_id=costing.sample_id).first()
+    materials = 0.0
+    if bom:
+        materials = sum((i.quantity or 0) * (i.cpm or 0) for i in bom.items)
+
+    labor = costing.labor or 0
+    overhead_pct = costing.overhead_pct or 0
+    margin_pct = costing.margin_pct or 0
+    freight = costing.freight or 0
+    mold_cost = costing.mold_cost or 0
+    order_qty = costing.order_qty or 0
+
+    mold_per_pair = mold_cost / order_qty if order_qty > 0 else 0
+    overhead = (materials + labor) * overhead_pct / 100
+    total_cost = materials + labor + overhead + freight + mold_per_pair
+    margin = total_cost * margin_pct / 100
+    fob_price = total_cost + margin
+    target_price = costing.target_price
+    variance = (fob_price - target_price) if target_price is not None else None
+
+    computed = {
+        "materials": round(materials, 4),
+        "labor": labor,
+        "overhead_pct": overhead_pct,
+        "overhead": round(overhead, 4),
+        "freight": freight,
+        "mold_cost": mold_cost,
+        "mold_per_pair": round(mold_per_pair, 4),
+        "total_cost": round(total_cost, 4),
+        "margin_pct": margin_pct,
+        "margin": round(margin, 4),
+        "fob_price": round(fob_price, 4),
+        "target_price": target_price,
+        "variance": round(variance, 4) if variance is not None else None,
+        "currency": costing.currency or "USD",
+    }
+
+    return schemas.CostingOut(
+        id=costing.id,
+        sample_id=costing.sample_id,
+        labor=costing.labor,
+        overhead_pct=costing.overhead_pct,
+        margin_pct=costing.margin_pct,
+        freight=costing.freight,
+        mold_cost=costing.mold_cost,
+        order_qty=costing.order_qty,
+        target_price=costing.target_price,
+        currency=costing.currency,
+        notes=costing.notes,
+        computed=computed,
+    )
+
+
+@app.get("/samples/{sid}/costing", response_model=schemas.CostingOut)
+def get_costing(sid: int, db: Session = Depends(get_db)):
+    if not db.get(models.Sample, sid):
+        raise HTTPException(404, "sample not found")
+    costing = db.query(models.Costing).filter_by(sample_id=sid).first()
+    if not costing:
+        costing = models.Costing(sample_id=sid)
+        db.add(costing)
+        db.commit()
+        db.refresh(costing)
+    return _costing_out(costing, db)
+
+
+@app.put("/samples/{sid}/costing", response_model=schemas.CostingOut)
+def update_costing(sid: int, payload: schemas.CostingUpdate, db: Session = Depends(get_db)):
+    if not db.get(models.Sample, sid):
+        raise HTTPException(404, "sample not found")
+    costing = db.query(models.Costing).filter_by(sample_id=sid).first()
+    if not costing:
+        costing = models.Costing(sample_id=sid)
+        db.add(costing)
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(costing, k, v)
+    db.commit()
+    db.refresh(costing)
+    return _costing_out(costing, db)
 
 
 # ---------- PDF Spec Sheet ----------

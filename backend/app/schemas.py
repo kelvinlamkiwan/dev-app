@@ -169,3 +169,52 @@ class StyleCreate(BaseModel):
     category: Optional[str] = None
     status: Optional[str] = None
     description: Optional[str] = None
+
+
+# ---------- Material Sync ----------
+class MaterialSyncItem(BaseModel):
+    material_code: str
+    id: int
+    action: str  # created | updated
+
+
+class MaterialSyncRequest(BaseModel):
+    materials: List[MaterialCreate]
+    delete_missing: bool = False  # True 時：push 入面冇嘅 material_code 會被刪走（full sync）
+
+
+class MaterialSyncResult(BaseModel):
+    created: int = 0
+    updated: int = 0
+    deleted: int = 0
+    errors: List[str] = []
+    items: List[MaterialSyncItem] = []
+
+
+# ---------- Costing ----------
+class CostingUpdate(BaseModel):
+    labor: Optional[float] = None
+    overhead_pct: Optional[float] = None
+    margin_pct: Optional[float] = None
+    freight: Optional[float] = None
+    mold_cost: Optional[float] = None
+    order_qty: Optional[int] = None
+    target_price: Optional[float] = None
+    currency: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CostingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    sample_id: int
+    labor: Optional[float] = 0
+    overhead_pct: Optional[float] = 0
+    margin_pct: Optional[float] = 0
+    freight: Optional[float] = 0
+    mold_cost: Optional[float] = 0
+    order_qty: Optional[int] = 0
+    target_price: Optional[float] = None
+    currency: Optional[str] = "USD"
+    notes: Optional[str] = None
+    computed: Optional[dict] = None

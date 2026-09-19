@@ -91,6 +91,9 @@ class Sample(Base):
     images = relationship(
         "SampleImage", back_populates="sample", cascade="all, delete-orphan"
     )
+    costing = relationship(
+        "Costing", back_populates="sample", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class Bom(Base):
@@ -144,6 +147,25 @@ class SampleImage(Base):
     image_type = Column(String)
 
     sample = relationship("Sample", back_populates="images")
+
+
+class Costing(Base):
+    """成本表（每個 Sample 一份，材料成本由 BOM 自動計）"""
+
+    __tablename__ = "costings"
+    id = Column(Integer, primary_key=True)
+    sample_id = Column(Integer, ForeignKey("samples.id"), nullable=False, unique=True)
+    labor = Column(Float, default=0)  # 加工費 CM（per pair）
+    overhead_pct = Column(Float, default=0)  # 間接成本 %
+    margin_pct = Column(Float, default=0)  # 利潤 %
+    freight = Column(Float, default=0)  # 運費（per pair）
+    mold_cost = Column(Float, default=0)  # 模具費（總額，攤銷落訂單量）
+    order_qty = Column(Integer, default=0)  # 訂單量（for mold 攤銷）
+    target_price = Column(Float)  # 目標售價
+    currency = Column(String, default="USD")
+    notes = Column(Text)
+
+    sample = relationship("Sample", back_populates="costing")
 
 
 class SpecSheet(Base):

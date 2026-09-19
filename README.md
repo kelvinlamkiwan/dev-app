@@ -74,6 +74,7 @@ docker run -d --name devapp --network devapp -p 8080:8080 \
 - 物料主檔（Material master）
 - PDF spec sheet import（自動拆解 ref / 顏色 / 物料 / 尺寸）
 - Confirmation Sample 確認閘口
+- 成本表 Costing（BOM 自動計材料成本 + labor / overhead / margin / freight / mold 攤銷 → FOB 報價 vs 目標價）
 
 ## 文檔
 
