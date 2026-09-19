@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 
-from . import cpm, models, schemas
+from . import cpm, excel_import, models, schemas
 from .database import Base, engine, get_db
 from .pdf_parser import parse_spec_sheet
 from .seed import seed_data
@@ -516,6 +516,21 @@ def get_cpm(sid: int, db: Session = Depends(get_db)):
             "done": done,
         },
     }
+
+
+@app.post("/cpm/import")
+async def import_cpm_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """由 Development Schedule Excel 匯入 CPM 日期（每行一個 Style）。
+
+    上傳 .xlsx，header 會自動匹配 ref / sample 階段日期 / 里程碑日期。
+    """
+    data = await file.read()
+    try:
+        return excel_import.import_workbook(data, db)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, f"Import failed: {exc}")
 
 
 # ---------- PDF Spec Sheet ----------

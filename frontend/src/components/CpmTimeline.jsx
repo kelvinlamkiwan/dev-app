@@ -44,6 +44,19 @@ export default function CpmTimeline({ styleId }) {
     load()
   }
 
+  async function importExcel(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await api.upload('/cpm/import', fd)
+      alert(`匯入完成：${res.rows} 行 · 新增 ${res.styles_created} 款 / 更新 ${res.styles_updated} 款 · sample ${res.samples_created} 新增 / ${res.samples_updated} 更新`)
+      load()
+    } catch (err) { alert(err.message) }
+    e.target.value = ''
+  }
+
   if (!cpm) return <div className="card muted">載入 CPM…</div>
 
   const renderRow = (item) => {
@@ -74,6 +87,10 @@ export default function CpmTimeline({ styleId }) {
         <span className="badge badge-grey">共 {s.total} 項</span>
         <span className="badge badge-green">完成 {s.done}</span>
         <span className="badge" style={{ background: '#fdecea', color: '#c62828' }}>遲到 {s.delayed} · 逾期 {s.overdue}</span>
+        <label className="btn btn-sm" style={{ cursor: 'pointer', marginLeft: 'auto' }}>
+          📥 匯入 Excel
+          <input type="file" accept=".xlsx" onChange={importExcel} style={{ display: 'none' }} />
+        </label>
       </div>
 
       <div className="row-sub" style={{ marginBottom: 10 }}>
