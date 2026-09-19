@@ -68,6 +68,12 @@ class Style(Base):
     spec_sheets = relationship(
         "SpecSheet", back_populates="style", cascade="all, delete-orphan"
     )
+    milestones = relationship(
+        "Milestone",
+        back_populates="style",
+        cascade="all, delete-orphan",
+        order_by="Milestone.sequence",
+    )
 
 
 class Sample(Base):
@@ -125,7 +131,7 @@ class BomItem(Base):
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
     quantity = Column(Float)
     unit = Column(String)
-    cpm = Column(Float)  # Cost Per Material：物料單位成本
+    unit_cost = Column(Float)  # 物料單位成本（per unit）
     color = Column(String)
     supplier_ref = Column(String)
     remarks = Column(Text)
@@ -179,3 +185,18 @@ class SpecSheet(Base):
     uploaded_at = Column(DateTime, default=now)
 
     style = relationship("Style", back_populates="spec_sheets")
+
+
+class Milestone(Base):
+    """CPM 里程碑（每個 Style 一組關鍵日期，如訂單確認／物料到廠／出貨）"""
+
+    __tablename__ = "milestones"
+    id = Column(Integer, primary_key=True)
+    style_id = Column(Integer, ForeignKey("styles.id"), nullable=False)
+    name = Column(String, nullable=False)
+    planned_date = Column(String)  # 計劃日期
+    actual_date = Column(String)  # 實際日期
+    sequence = Column(Integer, default=0)  # 排序
+    notes = Column(Text)
+
+    style = relationship("Style", back_populates="milestones")

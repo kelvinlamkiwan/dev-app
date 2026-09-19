@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 
-from . import models, schemas
+from . import cpm, models, schemas
 from .database import Base, engine, get_db
 from .pdf_parser import parse_spec_sheet
 from .seed import seed_data
@@ -22,13 +22,16 @@ app.add_middleware(
 
 
 def _migrate():
-    """輕量遷移：舊 DB 冇 cpm 列就自動 ALTER TABLE 加返。"""
+    """輕量遷移：bom_items 嘅 cpm→unit_cost rename，同補缺失列。"""
     insp = inspect(engine)
     if "bom_items" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("bom_items")}
-        if "cpm" not in cols:
+        if "cpm" in cols and "unit_cost" not in cols:
             with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE bom_items ADD COLUMN cpm FLOAT"))
+                conn.execute(text("ALTER TABLE bom_items RENAME COLUMN cpm TO unit_cost"))
+        elif "unit_cost" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bom_items ADD COLUMN unit_cost FLOAT"))
 
 
 @app.on_event("startup")
@@ -193,6 +196,9 @@ def create_style(payload: schemas.StyleCreate, db: Session = Depends(get_db)):
         raise HTTPException(409, "ref_no already exists")
     s = models.Style(**payload.model_dump())
     db.add(s)
+    db.flush()
+    for m in cpm.DEFAULT_MILESTONES:
+        db.add(models.Milestone(style_id=s.id, **m))
     db.commit()
     db.refresh(s)
     return schemas.StyleOut.model_validate(s)
@@ -243,7 +249,7 @@ def create_sample(sid: int, payload: schemas.SampleCreate, db: Session = Depends
 
 
 @app.put("/samples/{sid}", response_model=schemas.SampleOut)
-def update_sample(sid: int, payload: schemas.SampleCreate, db: Session = Depends(get_db)):
+def update_sample(sid: int, payload: schemas.SampleUpdate, db: Session = Depends(get_db)):
     s = db.get(models.Sample, sid)
     if not s:
         raise HTTPException(404, "sample not found")
@@ -271,11 +277,11 @@ def add_bom_item(bid: int, payload: schemas.BomItemCreate, db: Session = Depends
     if not bom:
         raise HTTPException(404, "bom not found")
     data = payload.model_dump()
-    # 未指定 CPM 時，預設用 material master 嘅 price
-    if data.get("cpm") is None:
+    # 未指定 unit_cost 時，預設用 material master 嘅 price
+    if data.get("unit_cost") is None:
         mat = db.get(models.Material, payload.material_id)
         if mat and mat.price is not None:
-            data["cpm"] = mat.price
+            data["unit_cost"] = mat.price
     max_order = db.query(func.max(models.BomItem.sort_order)).filter_by(bom_id=bid).scalar() or 0
     item = models.BomItem(bom_id=bid, sort_order=max_order + 1, **data)
     db.add(item)
@@ -325,7 +331,7 @@ def _costing_out(costing, db: Session) -> schemas.CostingOut:
     bom = db.query(models.Bom).filter_by(sample_id=costing.sample_id).first()
     materials = 0.0
     if bom:
-        materials = sum((i.quantity or 0) * (i.cpm or 0) for i in bom.items)
+        materials = sum((i.quantity or 0) * (i.unit_cost or 0) for i in bom.items)
 
     labor = costing.labor or 0
     overhead_pct = costing.overhead_pct or 0
@@ -401,6 +407,115 @@ def update_costing(sid: int, payload: schemas.CostingUpdate, db: Session = Depen
     db.commit()
     db.refresh(costing)
     return _costing_out(costing, db)
+
+
+# ---------- Milestones / CPM ----------
+@app.get("/styles/{sid}/milestones", response_model=list[schemas.MilestoneOut])
+def list_milestones(sid: int, db: Session = Depends(get_db)):
+    if not db.get(models.Style, sid):
+        raise HTTPException(404, "style not found")
+    return (
+        db.query(models.Milestone)
+        .filter_by(style_id=sid)
+        .order_by(models.Milestone.sequence)
+        .all()
+    )
+
+
+@app.post("/styles/{sid}/milestones", response_model=schemas.MilestoneOut)
+def create_milestone(sid: int, payload: schemas.MilestoneCreate, db: Session = Depends(get_db)):
+    if not db.get(models.Style, sid):
+        raise HTTPException(404, "style not found")
+    data = payload.model_dump()
+    if data.get("sequence") is None:
+        max_seq = db.query(func.max(models.Milestone.sequence)).filter_by(style_id=sid).scalar() or 0
+        data["sequence"] = max_seq + 10
+    m = models.Milestone(style_id=sid, **data)
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+@app.put("/milestones/{mid}", response_model=schemas.MilestoneOut)
+def update_milestone(mid: int, payload: schemas.MilestoneUpdate, db: Session = Depends(get_db)):
+    m = db.get(models.Milestone, mid)
+    if not m:
+        raise HTTPException(404, "milestone not found")
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(m, k, v)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+@app.delete("/milestones/{mid}")
+def delete_milestone(mid: int, db: Session = Depends(get_db)):
+    m = db.get(models.Milestone, mid)
+    if not m:
+        raise HTTPException(404, "milestone not found")
+    db.delete(m)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/styles/{sid}/cpm")
+def get_cpm(sid: int, db: Session = Depends(get_db)):
+    """CPM 關鍵路徑：Sample 階段時間線 + 自訂里程碑，計 delay / critical。"""
+    style = db.get(models.Style, sid)
+    if not style:
+        raise HTTPException(404, "style not found")
+
+    sample_timeline = []
+    for s in sorted(style.samples, key=lambda x: cpm.STAGE_ORDER.get(x.stage, 99)):
+        st = cpm.delay_status(s.requested_date, s.received_date)
+        sample_timeline.append(
+            {
+                "kind": "sample",
+                "id": s.id,
+                "name": s.stage,
+                "planned": s.requested_date,
+                "actual": s.received_date,
+                "status": st["status"],
+                "delay_days": st["delay_days"],
+                "critical": st["critical"],
+            }
+        )
+
+    milestones = []
+    for m in sorted(style.milestones, key=lambda x: x.sequence or 0):
+        st = cpm.delay_status(m.planned_date, m.actual_date)
+        milestones.append(
+            {
+                "kind": "milestone",
+                "id": m.id,
+                "name": m.name,
+                "planned": m.planned_date,
+                "actual": m.actual_date,
+                "status": st["status"],
+                "delay_days": st["delay_days"],
+                "critical": st["critical"],
+            }
+        )
+
+    all_items = sample_timeline + milestones
+    critical = sum(1 for x in all_items if x["critical"])
+    delayed = sum(1 for x in all_items if x["status"] == "delayed")
+    overdue = sum(1 for x in all_items if x["status"] == "overdue")
+    done = sum(1 for x in all_items if x["status"] == "done")
+
+    return {
+        "ref_no": style.ref_no,
+        "sample_timeline": sample_timeline,
+        "milestones": milestones,
+        "summary": {
+            "total": len(all_items),
+            "critical": critical,
+            "delayed": delayed,
+            "overdue": overdue,
+            "done": done,
+        },
+    }
 
 
 # ---------- PDF Spec Sheet ----------

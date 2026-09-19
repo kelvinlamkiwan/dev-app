@@ -69,7 +69,7 @@ class BomItemOut(BaseModel):
     material_id: int
     quantity: Optional[float] = None
     unit: Optional[str] = None
-    cpm: Optional[float] = None
+    unit_cost: Optional[float] = None
     color: Optional[str] = None
     supplier_ref: Optional[str] = None
     remarks: Optional[str] = None
@@ -83,7 +83,7 @@ class BomItemCreate(BaseModel):
     material_id: int
     quantity: Optional[float] = None
     unit: Optional[str] = None
-    cpm: Optional[float] = None
+    unit_cost: Optional[float] = None
     color: Optional[str] = None
     supplier_ref: Optional[str] = None
     remarks: Optional[str] = None
@@ -94,7 +94,7 @@ class BomItemUpdate(BaseModel):
     material_id: Optional[int] = None
     quantity: Optional[float] = None
     unit: Optional[str] = None
-    cpm: Optional[float] = None
+    unit_cost: Optional[float] = None
     color: Optional[str] = None
     supplier_ref: Optional[str] = None
     remarks: Optional[str] = None
@@ -127,6 +127,16 @@ class SampleOut(BaseModel):
 
 class SampleCreate(BaseModel):
     stage: str
+    sample_no: Optional[str] = None
+    size: Optional[str] = None
+    status: Optional[str] = None
+    requested_date: Optional[str] = None
+    received_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SampleUpdate(BaseModel):
+    stage: Optional[str] = None
     sample_no: Optional[str] = None
     size: Optional[str] = None
     status: Optional[str] = None
@@ -218,3 +228,31 @@ class CostingOut(BaseModel):
     currency: Optional[str] = "USD"
     notes: Optional[str] = None
     computed: Optional[dict] = None
+
+
+# ---------- Milestone / CPM ----------
+class MilestoneOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    style_id: int
+    name: str
+    planned_date: Optional[str] = None
+    actual_date: Optional[str] = None
+    sequence: int = 0
+    notes: Optional[str] = None
+
+
+class MilestoneCreate(BaseModel):
+    name: str
+    planned_date: Optional[str] = None
+    actual_date: Optional[str] = None
+    sequence: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class MilestoneUpdate(BaseModel):
+    name: Optional[str] = None
+    planned_date: Optional[str] = None
+    actual_date: Optional[str] = None
+    sequence: Optional[int] = None
+    notes: Optional[str] = None

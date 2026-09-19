@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import MaterialPicker from './MaterialPicker.jsx'
 
-const EMPTY = { material_id: '', component_id: '', quantity: '', unit: '', cpm: '', color: '' }
+const EMPTY = { material_id: '', component_id: '', quantity: '', unit: '', unit_cost: '', color: '' }
 
 export default function BomEditor({ bom, onChanged }) {
   const [materials, setMaterials] = useState([])
@@ -22,7 +22,7 @@ export default function BomEditor({ bom, onChanged }) {
         component_id: newItem.component_id ? Number(newItem.component_id) : null,
         quantity: newItem.quantity ? Number(newItem.quantity) : null,
         unit: newItem.unit || null,
-        cpm: newItem.cpm ? Number(newItem.cpm) : null,
+        unit_cost: newItem.unit_cost ? Number(newItem.unit_cost) : null,
         color: newItem.color || null,
       })
       setNewItem(EMPTY)
@@ -41,7 +41,7 @@ export default function BomEditor({ bom, onChanged }) {
   }
 
   const items = bom?.items || []
-  const subtotal = (i) => (i.quantity != null && i.cpm != null ? i.quantity * i.cpm : null)
+  const subtotal = (i) => (i.quantity != null && i.unit_cost != null ? i.quantity * i.unit_cost : null)
   const total = items.reduce((sum, i) => sum + (subtotal(i) || 0), 0)
 
   return (
@@ -55,7 +55,7 @@ export default function BomEditor({ bom, onChanged }) {
 
       <table>
         <thead>
-          <tr><th>部件</th><th>物料</th><th>數量</th><th>單位</th><th>單價(CPM)</th><th>小計</th><th>顏色</th><th></th></tr>
+          <tr><th>部件</th><th>物料</th><th>數量</th><th>單位</th><th>單價</th><th>小計</th><th>顏色</th><th></th></tr>
         </thead>
         <tbody>
           {items.map((i) => (
@@ -67,7 +67,7 @@ export default function BomEditor({ bom, onChanged }) {
               </td>
               <td>{i.quantity ?? '—'}</td>
               <td>{i.unit || '—'}</td>
-              <td>{i.cpm != null ? `$${i.cpm.toFixed(2)}` : '—'}</td>
+              <td>{i.unit_cost != null ? `$${i.unit_cost.toFixed(2)}` : '—'}</td>
               <td>{subtotal(i) != null ? `$${subtotal(i).toFixed(2)}` : '—'}</td>
               <td>{i.color || '—'}</td>
               <td><button className="btn btn-sm btn-danger" onClick={() => removeItem(i.id)}>刪</button></td>
@@ -107,8 +107,8 @@ export default function BomEditor({ bom, onChanged }) {
           <input value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })} />
         </div>
         <div style={{ width: 90 }}>
-          <label>單價(CPM)</label>
-          <input value={newItem.cpm} placeholder="留空用 price" onChange={(e) => setNewItem({ ...newItem, cpm: e.target.value })} />
+          <label>單價</label>
+          <input value={newItem.unit_cost} placeholder="留空用 price" onChange={(e) => setNewItem({ ...newItem, unit_cost: e.target.value })} />
         </div>
         <div style={{ width: 90 }}>
           <label>顏色</label>
