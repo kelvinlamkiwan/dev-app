@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import BomEditor from '../components/BomEditor.jsx'
-import CostingEditor from '../components/CostingEditor.jsx'
-import CpmTimeline from '../components/CpmTimeline.jsx'
 
 const STAGES = ['development', 'confirmation', 'salesman', 'production', 'photo']
 
@@ -79,13 +77,10 @@ export default function StyleDetail() {
             Sample: {sample.sample_no || '—'} · Size: {sample.size || '—'} · 狀態: {sample.status || '—'}
           </div>
           <BomEditor key={sample.id} bom={sample.bom} onChanged={load} />
-          <CostingEditor key={`cost-${sample.id}`} sample={sample} />
         </>
       ) : (
         <div className="empty">未有樣本階段，撳「＋ 加階段」</div>
       )}
-
-      <CpmTimeline styleId={style.id} />
 
       <div className="card" style={{ marginTop: 20 }}>
         <h3 style={{ marginTop: 0 }}>📄 Import PDF Spec Sheet</h3>

@@ -327,7 +327,7 @@ def confirm_bom(bid: int, db: Session = Depends(get_db)):
 
 
 # ---------- Costing ----------
-def _costing_out(costing, db: Session) -> schemas.CostingOut:
+def _compute_costing(costing, db: Session) -> dict:
     bom = db.query(models.Bom).filter_by(sample_id=costing.sample_id).first()
     materials = 0.0
     if bom:
@@ -348,7 +348,7 @@ def _costing_out(costing, db: Session) -> schemas.CostingOut:
     target_price = costing.target_price
     variance = (fob_price - target_price) if target_price is not None else None
 
-    computed = {
+    return {
         "materials": round(materials, 4),
         "labor": labor,
         "overhead_pct": overhead_pct,
@@ -365,6 +365,8 @@ def _costing_out(costing, db: Session) -> schemas.CostingOut:
         "currency": costing.currency or "USD",
     }
 
+
+def _costing_out(costing, db: Session) -> schemas.CostingOut:
     return schemas.CostingOut(
         id=costing.id,
         sample_id=costing.sample_id,
@@ -377,7 +379,7 @@ def _costing_out(costing, db: Session) -> schemas.CostingOut:
         target_price=costing.target_price,
         currency=costing.currency,
         notes=costing.notes,
-        computed=computed,
+        computed=_compute_costing(costing, db),
     )
 
 
@@ -407,6 +409,54 @@ def update_costing(sid: int, payload: schemas.CostingUpdate, db: Session = Depen
     db.commit()
     db.refresh(costing)
     return _costing_out(costing, db)
+
+
+@app.get("/costing")
+def list_costing(db: Session = Depends(get_db)):
+    """所有鞋款嘅成本 summary（每階段材料成本 + FOB 報價）。"""
+    styles = db.query(models.Style).order_by(models.Style.id.desc()).all()
+    result = []
+    for style in styles:
+        samples = []
+        for s in style.samples:
+            costing = db.query(models.Costing).filter_by(sample_id=s.id).first()
+            if costing:
+                comp = _compute_costing(costing, db)
+                samples.append(
+                    {
+                        "sample_id": s.id,
+                        "stage": s.stage,
+                        "materials": comp["materials"],
+                        "total_cost": comp["total_cost"],
+                        "fob_price": comp["fob_price"],
+                        "target_price": comp["target_price"],
+                        "variance": comp["variance"],
+                    }
+                )
+            else:
+                bom = s.bom
+                materials = round(sum((i.quantity or 0) * (i.unit_cost or 0) for i in bom.items), 4) if bom else 0.0
+                samples.append(
+                    {
+                        "sample_id": s.id,
+                        "stage": s.stage,
+                        "materials": materials,
+                        "total_cost": None,
+                        "fob_price": None,
+                        "target_price": None,
+                        "variance": None,
+                    }
+                )
+        result.append(
+            {
+                "style_id": style.id,
+                "ref_no": style.ref_no,
+                "customer": style.customer,
+                "brand": style.brand,
+                "samples": samples,
+            }
+        )
+    return result
 
 
 # ---------- Milestones / CPM ----------
@@ -516,6 +566,22 @@ def get_cpm(sid: int, db: Session = Depends(get_db)):
             "done": done,
         },
     }
+
+
+@app.get("/cpm")
+def list_cpm(db: Session = Depends(get_db)):
+    """所有鞋款嘅 CPM summary（關鍵路徑 dashboard）。"""
+    styles = db.query(models.Style).order_by(models.Style.id.desc()).all()
+    return [
+        {
+            "style_id": s.id,
+            "ref_no": s.ref_no,
+            "customer": s.customer,
+            "brand": s.brand,
+            "summary": cpm.compute_summary(s),
+        }
+        for s in styles
+    ]
 
 
 @app.post("/cpm/import")

@@ -67,3 +67,16 @@ def delay_status(planned_s, actual_s, today=None):
         return {"status": "scheduled", "delay_days": 0, "critical": False}
 
     return {"status": "not_started", "delay_days": 0, "critical": False}
+
+
+def compute_summary(style):
+    """計一個 Style 嘅 CPM summary（total / critical / delayed / overdue / done）。"""
+    items = [delay_status(s.requested_date, s.received_date) for s in style.samples]
+    items += [delay_status(m.planned_date, m.actual_date) for m in style.milestones]
+    return {
+        "total": len(items),
+        "critical": sum(1 for x in items if x["critical"]),
+        "delayed": sum(1 for x in items if x["status"] == "delayed"),
+        "overdue": sum(1 for x in items if x["status"] == "overdue"),
+        "done": sum(1 for x in items if x["status"] == "done"),
+    }
