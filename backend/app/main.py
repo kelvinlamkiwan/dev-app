@@ -2,7 +2,7 @@ import json
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func
+from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -21,9 +21,20 @@ app.add_middleware(
 )
 
 
+def _migrate():
+    """輕量遷移：舊 DB 冇 cpm 列就自動 ALTER TABLE 加返。"""
+    insp = inspect(engine)
+    if "bom_items" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("bom_items")}
+        if "cpm" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bom_items ADD COLUMN cpm FLOAT"))
+
+
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
+    _migrate()
     seed_data()
 
 
@@ -186,8 +197,14 @@ def add_bom_item(bid: int, payload: schemas.BomItemCreate, db: Session = Depends
     bom = db.get(models.Bom, bid)
     if not bom:
         raise HTTPException(404, "bom not found")
+    data = payload.model_dump()
+    # 未指定 CPM 時，預設用 material master 嘅 price
+    if data.get("cpm") is None:
+        mat = db.get(models.Material, payload.material_id)
+        if mat and mat.price is not None:
+            data["cpm"] = mat.price
     max_order = db.query(func.max(models.BomItem.sort_order)).filter_by(bom_id=bid).scalar() or 0
-    item = models.BomItem(bom_id=bid, sort_order=max_order + 1, **payload.model_dump())
+    item = models.BomItem(bom_id=bid, sort_order=max_order + 1, **data)
     db.add(item)
     db.commit()
     db.refresh(bom)

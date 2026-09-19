@@ -122,6 +122,7 @@ class BomItem(Base):
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
     quantity = Column(Float)
     unit = Column(String)
+    cpm = Column(Float)  # Cost Per Material：物料單位成本
     color = Column(String)
     supplier_ref = Column(String)
     remarks = Column(Text)

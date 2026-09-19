@@ -47,9 +47,9 @@ def seed_data():
             comp = {c.name: c for c in db.query(models.Component).all()}
             mat = {m.name: m for m in db.query(models.Material).all()}
 
-            db.add(models.BomItem(bom_id=bom.id, component_id=comp["Vamp"].id, material_id=mat["Cow Leather Black"].id, quantity=2.0, unit="sqft", color="Black", sort_order=1))
-            db.add(models.BomItem(bom_id=bom.id, component_id=comp["Sole"].id, material_id=mat["Rubber Outsole White"].id, quantity=1.0, unit="pair", color="White", sort_order=2))
-            db.add(models.BomItem(bom_id=bom.id, component_id=comp["Midsole"].id, material_id=mat["EVA Midsole White"].id, quantity=1.0, unit="pair", color="White", sort_order=3))
+            db.add(models.BomItem(bom_id=bom.id, component_id=comp["Vamp"].id, material_id=mat["Cow Leather Black"].id, quantity=2.0, unit="sqft", cpm=2.5, color="Black", sort_order=1))
+            db.add(models.BomItem(bom_id=bom.id, component_id=comp["Sole"].id, material_id=mat["Rubber Outsole White"].id, quantity=1.0, unit="pair", cpm=3.0, color="White", sort_order=2))
+            db.add(models.BomItem(bom_id=bom.id, component_id=comp["Midsole"].id, material_id=mat["EVA Midsole White"].id, quantity=1.0, unit="pair", cpm=1.5, color="White", sort_order=3))
             db.commit()
     finally:
         db.close()

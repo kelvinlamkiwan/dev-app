@@ -69,6 +69,7 @@ class BomItemOut(BaseModel):
     material_id: int
     quantity: Optional[float] = None
     unit: Optional[str] = None
+    cpm: Optional[float] = None
     color: Optional[str] = None
     supplier_ref: Optional[str] = None
     remarks: Optional[str] = None
@@ -82,6 +83,7 @@ class BomItemCreate(BaseModel):
     material_id: int
     quantity: Optional[float] = None
     unit: Optional[str] = None
+    cpm: Optional[float] = None
     color: Optional[str] = None
     supplier_ref: Optional[str] = None
     remarks: Optional[str] = None
@@ -92,6 +94,7 @@ class BomItemUpdate(BaseModel):
     material_id: Optional[int] = None
     quantity: Optional[float] = None
     unit: Optional[str] = None
+    cpm: Optional[float] = None
     color: Optional[str] = None
     supplier_ref: Optional[str] = None
     remarks: Optional[str] = None
