@@ -77,6 +77,7 @@ docker run -d --name devapp --network devapp -p 8080:8080 \
 - 成本表 Costing（BOM 自動計材料成本 + labor / overhead / margin / freight / mold 攤銷 → FOB 報價 vs 目標價）
 - CPM 關鍵路徑 Critical Path Management（Sample 階段時間線 + 里程碑，計劃 vs 實際日期、計 delay、標 critical）
 - CPM Excel 匯入（上傳 Development Schedule，header 自動匹配 → `POST /cpm/import`，範本見 `docs/cpm-import-template.xlsx`）
+- 狀態追蹤 Audit Trail（`status_logs` 表：改 status 自動 log + 記 `status_changed_at`，轉 done 自動填完成日期；`GET /activity`）
 
 ## 文檔
 

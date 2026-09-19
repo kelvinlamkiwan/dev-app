@@ -86,6 +86,7 @@ class Sample(Base):
     sample_no = Column(String)
     size = Column(String)
     status = Column(String)
+    status_changed_at = Column(DateTime)  # status 最後一次變更時間
     requested_date = Column(String)
     received_date = Column(String)
     notes = Column(Text)
@@ -194,9 +195,26 @@ class Milestone(Base):
     id = Column(Integer, primary_key=True)
     style_id = Column(Integer, ForeignKey("styles.id"), nullable=False)
     name = Column(String, nullable=False)
+    status = Column(String, default="pending")  # pending / in progress / done ...
+    status_changed_at = Column(DateTime)  # status 最後一次變更時間
     planned_date = Column(String)  # 計劃日期
     actual_date = Column(String)  # 實際日期
     sequence = Column(Integer, default=0)  # 排序
     notes = Column(Text)
 
     style = relationship("Style", back_populates="milestones")
+
+
+class StatusLog(Base):
+    """狀態變更 audit log（邊個 entity 嘅 field 幾時由咩轉做咩）。"""
+
+    __tablename__ = "status_logs"
+    id = Column(Integer, primary_key=True)
+    entity_type = Column(String, nullable=False)  # sample / milestone / style / bom
+    entity_id = Column(Integer, nullable=False)
+    ref_no = Column(String)  # 關聯嘅 Style ref（方便 display）
+    field = Column(String, default="status")
+    old_value = Column(String)
+    new_value = Column(String)
+    note = Column(Text)
+    changed_at = Column(DateTime, default=now)

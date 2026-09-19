@@ -20,11 +20,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# status 轉做呢啲值時，自動當完成並補 actual/received date
+DONE_STATUSES = {"done", "completed", "complete", "received", "finished", "closed", "delivered"}
+
+
+def _is_done(status):
+    return bool(status) and str(status).strip().lower() in DONE_STATUSES
+
+
+def _log_status_change(db, entity_type, entity_id, ref_no, field, old_value, new_value, note=None):
+    db.add(
+        models.StatusLog(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            ref_no=ref_no,
+            field=field,
+            old_value=old_value,
+            new_value=new_value,
+            note=note,
+        )
+    )
+
 
 def _migrate():
-    """輕量遷移：bom_items 嘅 cpm→unit_cost rename，同補缺失列。"""
+    """輕量遷移：補缺失列 + bom_items 嘅 cpm→unit_cost rename。"""
     insp = inspect(engine)
-    if "bom_items" in insp.get_table_names():
+    tables = insp.get_table_names()
+
+    def ensure_column(table, col, ddl):
+        if table in tables:
+            cols = {c["name"] for c in insp.get_columns(table)}
+            if col not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
+
+    # bom_items: cpm -> unit_cost
+    if "bom_items" in tables:
         cols = {c["name"] for c in insp.get_columns("bom_items")}
         if "cpm" in cols and "unit_cost" not in cols:
             with engine.begin() as conn:
@@ -32,6 +63,10 @@ def _migrate():
         elif "unit_cost" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE bom_items ADD COLUMN unit_cost FLOAT"))
+
+    ensure_column("samples", "status_changed_at", "status_changed_at TIMESTAMP")
+    ensure_column("milestones", "status", "status VARCHAR DEFAULT 'pending'")
+    ensure_column("milestones", "status_changed_at", "status_changed_at TIMESTAMP")
 
 
 @app.on_event("startup")
@@ -61,6 +96,36 @@ def get_stats(db: Session = Depends(get_db)):
     recent = db.query(models.Style).order_by(models.Style.updated_at.desc()).limit(5).all()
     recent_styles = [schemas.StyleSummary.model_validate(s) for s in recent]
 
+    # CPM 全庫 summary + 成本超標
+    styles = db.query(models.Style).all()
+    cpm_critical = cpm_delayed = cpm_overdue = 0
+    costing_over_target = 0
+    for s in styles:
+        summ = cpm.compute_summary(s)
+        cpm_critical += summ["critical"]
+        cpm_delayed += summ["delayed"]
+        cpm_overdue += summ["overdue"]
+        for smp in s.samples:
+            costing = db.query(models.Costing).filter_by(sample_id=smp.id).first()
+            if costing:
+                comp = _compute_costing(costing, db)
+                if comp["target_price"] is not None and comp["fob_price"] > comp["target_price"]:
+                    costing_over_target += 1
+
+    # 最近 status 變更（audit trail）
+    recent_logs = db.query(models.StatusLog).order_by(models.StatusLog.changed_at.desc()).limit(6).all()
+    recent_activity = [
+        {
+            "entity_type": l.entity_type,
+            "ref_no": l.ref_no,
+            "field": l.field,
+            "old_value": l.old_value,
+            "new_value": l.new_value,
+            "changed_at": l.changed_at.isoformat() if l.changed_at else None,
+        }
+        for l in recent_logs
+    ]
+
     return {
         "styles_total": styles_total,
         "materials_total": materials_total,
@@ -70,7 +135,29 @@ def get_stats(db: Session = Depends(get_db)):
         "boms_confirmed": boms_confirmed,
         "styles_by_status": styles_by_status,
         "recent_styles": recent_styles,
+        "cpm": {"critical": cpm_critical, "delayed": cpm_delayed, "overdue": cpm_overdue},
+        "costing_over_target": costing_over_target,
+        "recent_activity": recent_activity,
     }
+
+
+@app.get("/activity")
+def get_activity(limit: int = 20, db: Session = Depends(get_db)):
+    logs = db.query(models.StatusLog).order_by(models.StatusLog.changed_at.desc()).limit(limit).all()
+    return [
+        {
+            "id": l.id,
+            "entity_type": l.entity_type,
+            "entity_id": l.entity_id,
+            "ref_no": l.ref_no,
+            "field": l.field,
+            "old_value": l.old_value,
+            "new_value": l.new_value,
+            "note": l.note,
+            "changed_at": l.changed_at.isoformat() if l.changed_at else None,
+        }
+        for l in logs
+    ]
 
 
 # ---------- Components ----------
@@ -253,7 +340,15 @@ def update_sample(sid: int, payload: schemas.SampleUpdate, db: Session = Depends
     s = db.get(models.Sample, sid)
     if not s:
         raise HTTPException(404, "sample not found")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    new_status = data.get("status")
+    if new_status is not None and new_status != s.status:
+        style = db.get(models.Style, s.style_id)
+        _log_status_change(db, "sample", s.id, style.ref_no if style else None, "status", s.status, new_status)
+        s.status_changed_at = models.now()
+        if _is_done(new_status) and not s.received_date:
+            s.received_date = models.now().date().isoformat()
+    for k, v in data.items():
         setattr(s, k, v)
     db.commit()
     db.refresh(s)
@@ -492,7 +587,15 @@ def update_milestone(mid: int, payload: schemas.MilestoneUpdate, db: Session = D
     m = db.get(models.Milestone, mid)
     if not m:
         raise HTTPException(404, "milestone not found")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    new_status = data.get("status")
+    if new_status is not None and new_status != m.status:
+        style = db.get(models.Style, m.style_id)
+        _log_status_change(db, "milestone", m.id, style.ref_no if style else None, "status", m.status, new_status)
+        m.status_changed_at = models.now()
+        if _is_done(new_status) and not m.actual_date:
+            m.actual_date = models.now().date().isoformat()
+    for k, v in data.items():
         setattr(m, k, v)
     db.commit()
     db.refresh(m)
@@ -529,6 +632,8 @@ def get_cpm(sid: int, db: Session = Depends(get_db)):
                 "status": st["status"],
                 "delay_days": st["delay_days"],
                 "critical": st["critical"],
+                "manual_status": s.status,
+                "status_changed_at": s.status_changed_at.isoformat() if s.status_changed_at else None,
             }
         )
 
@@ -545,6 +650,8 @@ def get_cpm(sid: int, db: Session = Depends(get_db)):
                 "status": st["status"],
                 "delay_days": st["delay_days"],
                 "critical": st["critical"],
+                "manual_status": m.status,
+                "status_changed_at": m.status_changed_at.isoformat() if m.status_changed_at else None,
             }
         )
 

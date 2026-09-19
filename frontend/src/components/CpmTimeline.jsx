@@ -9,6 +9,19 @@ const STATUS = {
   not_started: { text: '未設日期', color: '#888', bg: '#f2f2f2' },
 }
 
+const MANUAL_STATUS = ['not started', 'in progress', 'done', 'on hold']
+
+function timeAgo(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const m = Math.floor((Date.now() - d.getTime()) / 60000)
+  if (m < 1) return '啱啱'
+  if (m < 60) return `${m} 分鐘前`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} 小時前`
+  return `${Math.floor(h / 24)} 日前`
+}
+
 export default function CpmTimeline({ styleId }) {
   const [cpm, setCpm] = useState(null)
   const [newName, setNewName] = useState('')
@@ -26,6 +39,15 @@ export default function CpmTimeline({ styleId }) {
     } else {
       const field = which === 'planned' ? 'planned_date' : 'actual_date'
       await api.put(`/milestones/${id}`, { [field]: value || null })
+    }
+    load()
+  }
+
+  async function saveStatus(kind, id, value) {
+    if (kind === 'sample') {
+      await api.put(`/samples/${id}`, { status: value || null })
+    } else {
+      await api.put(`/milestones/${id}`, { status: value || null })
     }
     load()
   }
@@ -59,23 +81,38 @@ export default function CpmTimeline({ styleId }) {
 
   if (!cpm) return <div className="card muted">載入 CPM…</div>
 
-  const renderRow = (item) => {
+  const statusBadge = (item) => {
     const st = STATUS[item.status] || STATUS.not_started
-    return (
-      <tr key={`${item.kind}-${item.id}`}>
-        <td>
-          <div>{item.name}</div>
-          {item.critical && <span style={{ fontSize: 11, color: '#c62828', fontWeight: 600 }}>⚠ critical</span>}
-        </td>
-        <td><input type="date" value={item.planned || ''} onChange={(e) => saveDate(item.kind, item.id, 'planned', e.target.value)} /></td>
-        <td><input type="date" value={item.actual || ''} onChange={(e) => saveDate(item.kind, item.id, 'actual', e.target.value)} /></td>
-        <td><span style={{ color: st.color, background: st.bg, padding: '2px 8px', borderRadius: 10, fontSize: 12, fontWeight: 600 }}>{st.text}</span></td>
-        <td style={{ textAlign: 'right', color: item.delay_days > 0 ? '#c62828' : '#888', fontWeight: item.delay_days > 0 ? 600 : 400 }}>
-          {item.delay_days > 0 ? `+${item.delay_days} 日` : '—'}
-        </td>
-      </tr>
-    )
+    return <span style={{ color: st.color, background: st.bg, padding: '2px 8px', borderRadius: 10, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{st.text}</span>
   }
+
+  const statusSelect = (item) => (
+    <select value={item.manual_status || ''} onChange={(e) => saveStatus(item.kind, item.id, e.target.value)} style={{ width: 'auto', fontSize: 13 }}>
+      <option value="">—</option>
+      {MANUAL_STATUS.map((o) => <option key={o} value={o}>{o}</option>)}
+      {item.manual_status && !MANUAL_STATUS.includes(item.manual_status) && <option value={item.manual_status}>{item.manual_status}</option>}
+    </select>
+  )
+
+  const changedAt = (item) => (
+    item.status_changed_at ? <div className="muted" style={{ fontSize: 11 }}>{timeAgo(item.status_changed_at)}</div> : null
+  )
+
+  const renderSampleRow = (item) => (
+    <tr key={`${item.kind}-${item.id}`}>
+      <td>
+        <div>{item.name}</div>
+        {item.critical && <span style={{ fontSize: 11, color: '#c62828', fontWeight: 600 }}>⚠ critical</span>}
+      </td>
+      <td>{statusSelect(item)}{changedAt(item)}</td>
+      <td><input type="date" value={item.planned || ''} onChange={(e) => saveDate(item.kind, item.id, 'planned', e.target.value)} /></td>
+      <td><input type="date" value={item.actual || ''} onChange={(e) => saveDate(item.kind, item.id, 'actual', e.target.value)} /></td>
+      <td>{statusBadge(item)}</td>
+      <td style={{ textAlign: 'right', color: item.delay_days > 0 ? '#c62828' : '#888', fontWeight: item.delay_days > 0 ? 600 : 400 }}>
+        {item.delay_days > 0 ? `+${item.delay_days} 日` : '—'}
+      </td>
+    </tr>
+  )
 
   const s = cpm.summary || {}
 
@@ -83,32 +120,32 @@ export default function CpmTimeline({ styleId }) {
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0 }}>🗓️ CPM 關鍵路徑 Critical Path</h3>
-        <div className="spacer" />
         <span className="badge badge-grey">共 {s.total} 項</span>
         <span className="badge badge-green">完成 {s.done}</span>
         <span className="badge" style={{ background: '#fdecea', color: '#c62828' }}>遲到 {s.delayed} · 逾期 {s.overdue}</span>
-        <label className="btn btn-sm" style={{ cursor: 'pointer', marginLeft: 'auto' }}>
+        <div className="spacer" />
+        <label className="btn btn-sm" style={{ cursor: 'pointer' }}>
           📥 匯入 Excel
           <input type="file" accept=".xlsx" onChange={importExcel} style={{ display: 'none' }} />
         </label>
       </div>
 
       <div className="row-sub" style={{ marginBottom: 10 }}>
-        「計劃」係 requested／planned 日期，「實際」係 received／actual 日期。遲到或逾期嘅會標做 critical，影響出貨。
+        改「手動狀態」做 done 會自動記錄完成時間並填「實際」日期；「計劃」= requested／planned，「實際」= received／actual。
       </div>
 
       <h4 style={{ margin: '14px 0 6px' }}>Sample 階段時間線</h4>
       <table>
-        <thead><tr><th>階段</th><th>計劃日期</th><th>實際日期</th><th>狀態</th><th>Delay</th></tr></thead>
+        <thead><tr><th>階段</th><th>手動狀態</th><th>計劃日期</th><th>實際日期</th><th>狀態</th><th>Delay</th></tr></thead>
         <tbody>
-          {cpm.sample_timeline.map(renderRow)}
-          {cpm.sample_timeline.length === 0 && <tr><td colSpan={5} className="empty">未有樣本階段</td></tr>}
+          {cpm.sample_timeline.map(renderSampleRow)}
+          {cpm.sample_timeline.length === 0 && <tr><td colSpan={6} className="empty">未有樣本階段</td></tr>}
         </tbody>
       </table>
 
       <h4 style={{ margin: '14px 0 6px' }}>里程碑 Milestones</h4>
       <table>
-        <thead><tr><th>里程碑</th><th>計劃日期</th><th>實際日期</th><th>狀態</th><th>Delay</th><th></th></tr></thead>
+        <thead><tr><th>里程碑</th><th>手動狀態</th><th>計劃日期</th><th>實際日期</th><th>狀態</th><th>Delay</th><th></th></tr></thead>
         <tbody>
           {cpm.milestones.map((m) => (
             <tr key={`m-${m.id}`}>
@@ -116,13 +153,10 @@ export default function CpmTimeline({ styleId }) {
                 <div>{m.name}</div>
                 {m.critical && <span style={{ fontSize: 11, color: '#c62828', fontWeight: 600 }}>⚠ critical</span>}
               </td>
+              <td>{statusSelect(m)}{changedAt(m)}</td>
               <td><input type="date" value={m.planned || ''} onChange={(e) => saveDate('milestone', m.id, 'planned', e.target.value)} /></td>
               <td><input type="date" value={m.actual || ''} onChange={(e) => saveDate('milestone', m.id, 'actual', e.target.value)} /></td>
-              <td>
-                <span style={{ color: (STATUS[m.status] || STATUS.not_started).color, background: (STATUS[m.status] || STATUS.not_started).bg, padding: '2px 8px', borderRadius: 10, fontSize: 12, fontWeight: 600 }}>
-                  {(STATUS[m.status] || STATUS.not_started).text}
-                </span>
-              </td>
+              <td>{statusBadge(m)}</td>
               <td style={{ textAlign: 'right', color: m.delay_days > 0 ? '#c62828' : '#888', fontWeight: m.delay_days > 0 ? 600 : 400 }}>
                 {m.delay_days > 0 ? `+${m.delay_days} 日` : '—'}
               </td>

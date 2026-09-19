@@ -7,6 +7,7 @@ import CostingPage from './pages/CostingPage.jsx'
 import CostingDetail from './pages/CostingDetail.jsx'
 import CpmPage from './pages/CpmPage.jsx'
 import CpmDetail from './pages/CpmDetail.jsx'
+import ActivityPage from './pages/ActivityPage.jsx'
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/costing/:id" element={<CostingDetail />} />
         <Route path="/cpm" element={<CpmPage />} />
         <Route path="/cpm/:id" element={<CpmDetail />} />
+        <Route path="/activity" element={<ActivityPage />} />
       </Routes>
     </>
   )

@@ -119,6 +119,7 @@ class SampleOut(BaseModel):
     sample_no: Optional[str] = None
     size: Optional[str] = None
     status: Optional[str] = None
+    status_changed_at: Optional[datetime] = None
     requested_date: Optional[str] = None
     received_date: Optional[str] = None
     notes: Optional[str] = None
@@ -236,6 +237,8 @@ class MilestoneOut(BaseModel):
     id: int
     style_id: int
     name: str
+    status: Optional[str] = "pending"
+    status_changed_at: Optional[datetime] = None
     planned_date: Optional[str] = None
     actual_date: Optional[str] = None
     sequence: int = 0
@@ -244,6 +247,7 @@ class MilestoneOut(BaseModel):
 
 class MilestoneCreate(BaseModel):
     name: str
+    status: Optional[str] = None
     planned_date: Optional[str] = None
     actual_date: Optional[str] = None
     sequence: Optional[int] = None
@@ -252,6 +256,7 @@ class MilestoneCreate(BaseModel):
 
 class MilestoneUpdate(BaseModel):
     name: Optional[str] = None
+    status: Optional[str] = None
     planned_date: Optional[str] = None
     actual_date: Optional[str] = None
     sequence: Optional[int] = None
