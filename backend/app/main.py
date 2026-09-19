@@ -43,6 +43,33 @@ def root():
     return {"app": "dev-app", "status": "ok"}
 
 
+@app.get("/stats")
+def get_stats(db: Session = Depends(get_db)):
+    styles_total = db.query(models.Style).count()
+    materials_total = db.query(models.Material).count()
+    components_total = db.query(models.Component).count()
+    samples_total = db.query(models.Sample).count()
+    boms_total = db.query(models.Bom).count()
+    boms_confirmed = db.query(models.Bom).filter_by(confirmed=True).count()
+
+    status_rows = db.query(models.Style.status, func.count()).group_by(models.Style.status).all()
+    styles_by_status = {s or "draft": n for s, n in status_rows}
+
+    recent = db.query(models.Style).order_by(models.Style.updated_at.desc()).limit(5).all()
+    recent_styles = [schemas.StyleSummary.model_validate(s) for s in recent]
+
+    return {
+        "styles_total": styles_total,
+        "materials_total": materials_total,
+        "components_total": components_total,
+        "samples_total": samples_total,
+        "boms_total": boms_total,
+        "boms_confirmed": boms_confirmed,
+        "styles_by_status": styles_by_status,
+        "recent_styles": recent_styles,
+    }
+
+
 # ---------- Components ----------
 @app.get("/components", response_model=list[schemas.ComponentOut])
 def list_components(db: Session = Depends(get_db)):

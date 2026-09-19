@@ -47,7 +47,7 @@ export default function StyleDetail() {
 
   return (
     <div className="page">
-      <Link to="/" className="muted">← 返去鞋款列表</Link>
+      <Link to="/styles" className="muted">← 返去鞋款列表</Link>
       <div className="page-head">
         <div>
           <h1>{style.ref_no}</h1>
