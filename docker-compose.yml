@@ -1,0 +1,19 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      - DATABASE_URL=sqlite:////app/data/dev_app.db
+    volumes:
+      - dbdata:/app/data
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  dbdata:
