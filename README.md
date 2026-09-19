@@ -29,6 +29,21 @@ npm run dev
 
 → 打開 http://localhost:5173
 
+## Docker 部署（唔使 compose）
+
+```bash
+# build 兩個 image
+docker build -t dev-app-backend ./backend
+docker build -t dev-app-frontend ./frontend
+
+# 起（用 network 令 frontend 搵到 backend）
+docker network create devapp
+docker run -d --name backend --network devapp -v devapp-data:/app/data dev-app-backend
+docker run -d --name frontend --network devapp -p 8080:80 dev-app-frontend
+```
+
+→ 打開 http://localhost:8080（nginx serve 前端 + proxy `/api` 去 backend）
+
 ## 功能
 
 - 鞋款（Style）＋ 樣本階段（每階段一份 BOM）
