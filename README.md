@@ -29,12 +29,13 @@ npm run dev
 
 → 打開 http://localhost:5173
 
-## Docker 部署（PostgreSQL，唔使 compose）
+## Docker 部署（單一 container，PostgreSQL）
+
+Root 有一個 `Dockerfile`：build 前端 → 最終 image 用 **supervisord** 同時跑 nginx（serve 前端 + proxy `/api`）+ uvicorn（後端）。一個 container 行晒前後端，DO App Platform 會喺 root 搵到 `Dockerfile` 自動認到 component。
 
 ```bash
-# 1. build image
-docker build -t dev-app-backend ./backend
-docker build -t dev-app-frontend ./frontend
+# 1. build image（喺 repo root）
+docker build -t dev-app-full .
 
 # 2. 起 network
 docker network create devapp
@@ -47,18 +48,24 @@ docker run -d --name postgres --network devapp \
   -v pgdata:/var/lib/postgresql/data \
   postgres:16-alpine
 
-# 4. 起 backend（DATABASE_URL 指去 postgres）
-docker run -d --name backend --network devapp \
+# 4. 起 app（nginx 喺 8080；DATABASE_URL 指去 postgres）
+docker run -d --name devapp --network devapp -p 8080:8080 \
   -e DATABASE_URL=postgresql://devapp:YOUR_PASSWORD@postgres:5432/devapp \
-  dev-app-backend
-
-# 5. 起 frontend
-docker run -d --name frontend --network devapp -p 8080:80 dev-app-frontend
+  dev-app-full
 ```
 
-→ 打開 http://localhost:8080（nginx serve 前端 + proxy `/api` 去 backend）
+→ 打開 http://localhost:8080
 
-> 本地 dev（唔用 Docker）仍用 SQLite；冇設 `DATABASE_URL` 時自動 fallback SQLite。
+### 部署到 DigitalOcean App Platform
+
+1. 開一個 App → 揀 GitHub repo（`kelvinlamkiwan/dev-app`）
+2. DO 會喺 root 偵測到 `Dockerfile`，自動認做 Web Service（預設 health check port **8080**）
+3. 加一個 **Database（PostgreSQL）** component，DO 會自動 inject `DATABASE_URL` env var 入 app container
+4. Deploy
+
+> 冇設 `DATABASE_URL` 時自動 fallback SQLite（本地 dev 用 SQLite；生產用 Postgres）。
+
+> 舊有「分開三個 container（postgres + backend + frontend）」嘅起法仍喺 `backend/Dockerfile` 同 `frontend/Dockerfile` 度保留，需要時可獨立 build。
 
 ## 功能
 

@@ -1,0 +1,13 @@
+# 加快 build context，唔好 send 本地 build artifacts / DB 上 Docker
+.git
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/venv/
+backend/__pycache__/
+**/__pycache__/
+**/*.pyc
+*.db
+.env
+.env.*
+docs/
