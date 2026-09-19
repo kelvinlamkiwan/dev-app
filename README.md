@@ -29,20 +29,36 @@ npm run dev
 
 → 打開 http://localhost:5173
 
-## Docker 部署（唔使 compose）
+## Docker 部署（PostgreSQL，唔使 compose）
 
 ```bash
-# build 兩個 image
+# 1. build image
 docker build -t dev-app-backend ./backend
 docker build -t dev-app-frontend ./frontend
 
-# 起（用 network 令 frontend 搵到 backend）
+# 2. 起 network
 docker network create devapp
-docker run -d --name backend --network devapp -v devapp-data:/app/data dev-app-backend
+
+# 3. 起 PostgreSQL（將 YOUR_PASSWORD 改成你嘅密碼）
+docker run -d --name postgres --network devapp \
+  -e POSTGRES_USER=devapp \
+  -e POSTGRES_PASSWORD=YOUR_PASSWORD \
+  -e POSTGRES_DB=devapp \
+  -v pgdata:/var/lib/postgresql/data \
+  postgres:16-alpine
+
+# 4. 起 backend（DATABASE_URL 指去 postgres）
+docker run -d --name backend --network devapp \
+  -e DATABASE_URL=postgresql://devapp:YOUR_PASSWORD@postgres:5432/devapp \
+  dev-app-backend
+
+# 5. 起 frontend
 docker run -d --name frontend --network devapp -p 8080:80 dev-app-frontend
 ```
 
 → 打開 http://localhost:8080（nginx serve 前端 + proxy `/api` 去 backend）
+
+> 本地 dev（唔用 Docker）仍用 SQLite；冇設 `DATABASE_URL` 時自動 fallback SQLite。
 
 ## 功能
 
